@@ -1,15 +1,15 @@
-# Modelling a house — ArcGIS Maps SDK for JavaScript 5.0 + React
+# Modelling the house — ArcGIS Maps SDK for JavaScript 5.0 + React
 
-A single-page 3D app that builds a two-storey house in seven stages on a real plot, using the
+A single-page 3D app that builds a five-wing house (modelled from drone captures) in seven stages on a real plot, using the
 ArcGIS Maps SDK for JavaScript 5.0 (`<arcgis-scene>` component + core API) with a React 19 UI.
 
-1. **Site survey** – cleared plot, boundary, setting-out pegs and string lines
-2. **Foundations** – strip footings, blockwork and slab (the ground turns translucent to show them)
-3. **Ground floor** – brick walls generated around their openings
-4. **Upper floor** – first-floor deck and timber-clad walls
-5. **Roof** – gables, 40° slate pitches, ridge cap and chimney
-6. **Windows and doors** – frames, glazing, front door and canopy
-7. **Landscape** – lawn, paving, hedge and low-poly trees
+1. **Site survey** – cleared plot, boundary, setting-out pegs and string lines for all five wings
+2. **Foundations** – strip footings, blockwork and slabs (the ground turns translucent to show them)
+3. **Ground floor** – roughcast-rendered walls generated around their openings
+4. **Upper floor** – floor decks and upper walls, including the tall stair window
+5. **Roof** – five tiled roofs and a front gable meeting in valleys, three chimneys, gutters and downpipes
+6. **Windows and doors** – timber windows on stone sills, glazed entrance and gable window, garage doors, roof lights
+7. **Landscape** – tarmac drive, curved front path, gravel planter, lawn and trees
 
 Features: animated build-up of each element, a "Blueprint" mode that shows future stages as a
 translucent wireframe, play/pause through the sequence, camera presets per stage, orbit mode,
@@ -35,9 +35,12 @@ python3 -m http.server 8080    # or: npx serve .
 
 All the knobs are near the top of the `<script type="module">` block in `index.html`:
 
-- `SITE` – longitude/latitude of the plot (default: open grassland in Phoenix Park, Dublin)
-- `D`, `Z` – footprint, wall thickness, storey heights, roof pitch and overhang
-- `OPENINGS` – doors and windows per floor and side (centre, width, sill, head)
+- **Position:** click **Move house**, click the map where the house stands and turn it until it lines up
+  with the roof in the imagery. The position is kept in the URL (`?at=longitude,latitude,rotation`), so
+  bookmark that link, or copy the values into `DEFAULT_PLACE` to make them the default.
+- `BLOCKS` – each wing's footprint, eave height, pitch, ridge direction and its windows and doors
+  (side, centre, width, sill and head heights)
+- `CHIMNEYS`, `DOWNPIPES`, `DRIVE`, `PATH`, `BED`, `PAVING`, `TREES` – the remaining details
 - `STAGES` – names, copy, swatch colours and camera preset (heading / tilt / distance) per stage
 - `MAT` – material colours
 
