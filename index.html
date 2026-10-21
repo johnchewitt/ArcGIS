@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>House Model</title>
+  <meta name="description" content="A React + ArcGIS Maps SDK for JavaScript 5.0 app that builds a house in seven stages, from survey pegs to a finished garden." />
+
+  <!-- Type -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..900&display=swap" />
+
+  <!-- ArcGIS Maps SDK for JavaScript 5.0 (core API + map components) -->
+  <link rel="stylesheet" href="https://js.arcgis.com/5.0/esri/themes/light/main.css" />
+  <script type="module" src="https://js.arcgis.com/5.0/"></script>
+
+  <!-- React 19 + htm (JSX-like templates with no build step) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.1.0",
+        "react-dom/client": "https://esm.sh/react-dom@19.1.0/client?deps=react@19.1.0",
+        "htm": "https://esm.sh/htm@3.1.1"
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --ink: #172036;
+      --ink-2: #4b5572;
+      --ink-3: #7a839c;
+      --glass: rgba(247, 248, 252, 0.78);
+      --glass-solid: rgba(255, 255, 255, 0.94);
+      --rim: rgba(255, 255, 255, 0.65);
+      --line: rgba(23, 32, 54, 0.09);
+      --blue: #3d5afe;
+      --blue-ink: #2a3fd6;
+      --blue-wash: rgba(61, 90, 254, 0.1);
+      --shadow: 0 24px 60px -24px rgba(12, 20, 44, 0.5), 0 2px 6px rgba(12, 20, 44, 0.08);
+      --r-panel: 22px;
+      --r-row: 12px;
+      --font: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --ink: #e9edf7;
+        --ink-2: #b3bbd0;
+        --ink-3: #8790a8;
+        --glass: rgba(17, 22, 37, 0.74);
+        --glass-solid: rgba(26, 32, 50, 0.95);
+        --rim: rgba(255, 255, 255, 0.08);
+        --line: rgba(233, 237, 247, 0.1);
+        --blue: #7d8fff;
+        --blue-ink: #a3b0ff;
+        --blue-wash: rgba(125, 143, 255, 0.16);
+        --shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.3);
+        color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --ink: #e9edf7; --ink-2: #b3bbd0; --ink-3: #8790a8;
+      --glass: rgba(17, 22, 37, 0.74); --glass-solid: rgba(26, 32, 50, 0.95);
+      --rim: rgba(255, 255, 255, 0.08); --line: rgba(233, 237, 247, 0.1);
+      --blue: #7d8fff; --blue-ink: #a3b0ff; --blue-wash: rgba(125, 143, 255, 0.16);
+      --shadow: 0 24px 60px -24px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.3);
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+    html, body, #root { height: 100%; margin: 0; }
+    body {
+      background: #0d1220;
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    button { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    .app { position: fixed; inset: 0; }
+    arcgis-scene { position: absolute; inset: 0; }
+
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(1.5);
+      -webkit-backdrop-filter: blur(20px) saturate(1.5);
+      border: 1px solid var(--rim);
+      box-shadow: var(--shadow);
+    }
+
+    /* ---------- Stage panel ---------- */
+    .panel {
+      position: absolute;
+      top: 16px; left: 16px;
+      width: 352px;
+      max-height: calc(100% - 140px);
+      overflow: auto;
+      border-radius: var(--r-panel);
+      padding: 22px 14px 12px;
+      scrollbar-width: thin;
+    }
+    .panel header { padding: 0 8px 16px; }
+    .panel h1 {
+      margin: 0 0 6px;
+      font-size: 27px;
+      line-height: 1.02;
+      font-weight: 800;
+      font-stretch: 125%;
+      letter-spacing: -0.015em;
+    }
+    .panel header p { margin: 0; color: var(--ink-2); font-size: 14px; max-width: 30ch; }
+
+    .stages { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+    .stage > button {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 30px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 7px 8px;
+      border: 0;
+      border-radius: var(--r-row);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color .2s;
+    }
+    .stage > button:hover { background: var(--blue-wash); }
+    .stage.current > button { background: var(--glass-solid); }
+    .stage .name { font-weight: 560; font-stretch: 100%; }
+    .stage.upcoming .name { color: var(--ink-2); font-weight: 480; }
+    .stage .state { color: var(--ink-3); display: grid; place-items: center; width: 20px; }
+    .stage.built .state { color: var(--blue); }
+
+    /* Material swatches: each stage is marked by a sample of what it adds */
+    .swatch {
+      position: relative;
+      width: 30px; height: 30px;
+      border-radius: 8px;
+      display: grid; place-items: center;
+      font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+      color: var(--sw-ink, #fff);
+      background-color: var(--sw);
+      background-image: var(--sw-tex, none);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.25);
+    }
+    .stage.upcoming .swatch {
+      background: transparent;
+      color: var(--blue);
+      box-shadow: inset 0 0 0 1.5px var(--blue);
+      background-image: repeating-linear-gradient(135deg, var(--blue-wash) 0 3px, transparent 3px 6px);
+    }
+    .stage.current .swatch { box-shadow: 0 0 0 2px var(--glass-solid), 0 0 0 4px var(--sw), inset 0 0 0 1px rgba(0,0,0,.12); }
+
+    .detail { padding: 6px 10px 14px 50px; }
+    .detail p { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; max-width: 34ch; }
+    .facts {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px;
+      margin: 0 0 12px; padding: 12px 0 0; border-top: 1px solid var(--line);
+    }
+    .facts div { min-width: 0; }
+    .facts dt { font-size: 12px; color: var(--ink-3); }
+    .facts dd {
+      margin: 1px 0 0; font-size: 19px; font-weight: 650; font-stretch: 88%;
+      font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+    }
+    .how {
+      display: flex; gap: 8px; align-items: flex-start;
+      margin: 0; font-size: 12.5px !important; color: var(--blue-ink) !important; line-height: 1.4;
+    }
+    .how svg { flex: none; margin-top: 2px; }
+
+    /* ---------- Dock ---------- */
+    .dock {
+      position: absolute;
+      left: 384px; right: 16px; bottom: 30px;
+      border-radius: 20px;
+      padding: 12px 14px 12px 12px;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 18px;
+    }
+    .transport { display: flex; align-items: center; gap: 4px; }
+    .icon-btn {
+      width: 38px; height: 38px; border-radius: 50%;
+      display: grid; place-items: center;
+      border: 0; background: transparent; cursor: pointer;
+      transition: background-color .2s;
+    }
+    .icon-btn:hover:not(:disabled) { background: var(--blue-wash); }
+    .icon-btn:disabled { opacity: .35; cursor: default; }
+    .play {
+      width: 48px; height: 48px; border-radius: 50%;
+      display: grid; place-items: center;
+      border: 0; cursor: pointer;
+      background: var(--blue); color: #fff;
+      box-shadow: 0 8px 22px -8px var(--blue);
+      transition: transform .15s;
+    }
+    .play:active { transform: scale(.95); }
+
+    .timeline { min-width: 0; }
+    .timeline-head {
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 12px; margin-bottom: 8px;
+    }
+    .timeline-head strong { font-weight: 700; font-stretch: 112%; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .timeline-head span { color: var(--ink-3); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .track { display: flex; gap: 4px; }
+    .seg {
+      flex: 1; height: 22px; padding: 7px 0;
+      border: 0; background: transparent; cursor: pointer;
+    }
+    .seg i {
+      display: block; height: 8px; border-radius: 4px; position: relative; overflow: hidden;
+      background: repeating-linear-gradient(135deg, var(--blue-wash) 0 3px, transparent 3px 6px);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 55%, transparent);
+    }
+    .seg.built i { background: var(--sw); box-shadow: none; }
+    .seg.current i::after {
+      content: ""; position: absolute; inset: 0;
+      background: var(--sw);
+      transform-origin: left;
+      transform: scaleX(var(--fill, 1));
+    }
+    .seg.current.playing i::after { animation: fill var(--dwell) linear forwards; }
+    @keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .seg:hover i { filter: brightness(1.1); }
+
+    .controls { display: flex; align-items: center; gap: 6px; }
+    .toggle {
+      display: inline-flex; align-items: center; gap: 7px;
+      height: 36px; padding: 0 13px 0 11px;
+      border-radius: 999px; border: 1px solid var(--line);
+      background: transparent; cursor: pointer; font-size: 13.5px; font-weight: 560;
+      color: var(--ink-2);
+      transition: background-color .2s, color .2s, border-color .2s;
+    }
+    .toggle[aria-pressed="true"] { background: var(--blue-wash); color: var(--blue-ink); border-color: transparent; }
+    .sun {
+      display: inline-flex; align-items: center; gap: 8px;
+      height: 36px; padding: 0 12px 0 10px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--ink-2); font-size: 13.5px; font-variant-numeric: tabular-nums;
+    }
+    .sun input { width: 92px; accent-color: var(--blue); }
+
+    /* ---------- Picked element ---------- */
+    .pick {
+      position: absolute; top: 16px; right: 16px;
+      width: 260px; border-radius: 18px; padding: 14px 14px 14px 16px;
+      display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;
+    }
+    .pick h2 { margin: 0; font-size: 16px; font-weight: 700; font-stretch: 106%; line-height: 1.2; }
+    .pick p { margin: 0; grid-column: 1; color: var(--ink-2); font-size: 13.5px; }
+    .pick .icon-btn { grid-row: 1 / span 2; grid-column: 2; width: 32px; height: 32px; margin: -4px -6px 0 0; }
+
+    .hint {
+      position: absolute; top: 16px; right: 16px;
+      padding: 9px 14px; border-radius: 999px; font-size: 13px; color: var(--ink-2);
+    }
+
+    /* ---------- Loading / error ---------- */
+    .veil {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      background: radial-gradient(120% 90% at 50% 40%, #1b2440 0%, #0d1220 70%);
+      color: #e9edf7; transition: opacity .8s; z-index: 5;
+    }
+    .veil.gone { opacity: 0; pointer-events: none; }
+    .veil-inner { text-align: center; padding: 24px; max-width: 420px; }
+    .veil h1 { font-size: 34px; font-weight: 800; font-stretch: 125%; margin: 0 0 8px; letter-spacing: -0.015em; }
+    .veil p { margin: 0; color: #b3bbd0; }
+    .bar { width: 180px; height: 3px; border-radius: 2px; margin: 22px auto 0; background: rgba(125,143,255,.2); overflow: hidden; }
+    .bar::after { content: ""; display: block; width: 40%; height: 100%; background: #7d8fff; animation: slide 1.2s ease-in-out infinite; }
+    @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+    /* ---------- Small screens ---------- */
+    @media (max-width: 860px) {
+      .panel {
+        top: 12px; left: 12px; right: 12px; width: auto;
+        padding: 14px 10px 6px; max-height: 46%;
+      }
+      .panel h1 { font-size: 21px; }
+      .panel header { padding-bottom: 8px; }
+      .panel header p { display: none; }
+      .stage:not(.current) { display: none; }
+      .detail { padding-left: 10px; }
+      .facts { grid-template-columns: repeat(4, auto); justify-content: start; }
+      .dock {
+        left: 12px; right: 12px; bottom: 24px;
+        grid-template-columns: auto 1fr;
+        gap: 10px 14px;
+      }
+      .controls { grid-column: 1 / -1; flex-wrap: wrap; }
+      .pick, .hint { display: none; }
+    }
+    @media (max-width: 480px) {
+      .facts { grid-template-columns: 1fr 1fr; }
+      .sun input { width: 70px; }
+      .transport .icon-btn { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition: none !important; animation-duration: 0s !important; }
+      .seg.current.playing i::after { animation: none; transform: scaleX(1); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useEffect, useRef, useState, useCallback } from "react";
+    import { createRoot } from "react-dom/client";
+    import htm from "htm";
+
+    const html = htm.bind(React.createElement);
+
+    /* ==================================================================
+       1. Site and design parameters (all lengths in metres)
+       Change SITE to move the plot anywhere in the world.
+       ================================================================== */
+    const SITE = { longitude: -6.3352, latitude: 53.3546 }; // open grassland, Phoenix Park, Dublin
+    const D = { x0: -5.5, x1: 5.5, y0: -4, y1: 4, t: 0.3 };  // footprint (x east, y north)
+    const Z = { slab: 0.15, gfTop: 2.85, ffTop: 3.1, eave: 5.6, pitch: 40, overhang: 0.45 };
+    const TAN = Math.tan((Z.pitch * Math.PI) / 180);
+    const RIDGE = Z.eave + ((D.y1 - D.y0) / 2) * TAN;
+    const TARGET_Z = 4; // camera orbits around this height above the slab
+    const DWELL = 3400; // ms each stage holds while playing
+
+    // Metres to degrees on the sphere the SceneView renders in global mode
+    const R_EARTH = 6378137;
+    const M_LAT = (R_EARTH * Math.PI) / 180;
+    const M_LON = M_LAT * Math.cos((SITE.latitude * Math.PI) / 180);
+    const toLonLat = (x, y) => [SITE.longitude + x / M_LON, SITE.latitude + y / M_LAT];
+
+    const prefersReducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    /* ==================================================================
+       2. Materials and stages
+       ================================================================== */
+    const MAT = {
+      peg: [255, 106, 26, 1], string: [250, 250, 250, 1],
+      concrete: [188, 186, 179, 1], block: [146, 145, 140, 1], slab: [204, 201, 193, 1],
+      brick: [206, 186, 156, 1], timber: [64, 59, 55, 1], deck: [176, 140, 98, 1],
+      slate: [72, 79, 92, 1], ridge: [48, 53, 63, 1], chimney: [170, 96, 66, 1],
+      frame: [44, 48, 53, 1], glass: [160, 205, 230, 0.42], door: [158, 112, 70, 1],
+      trunk: [94, 72, 52, 1], leaf: [92, 142, 74, 1], leaf2: [128, 166, 82, 1], hedge: [70, 116, 60, 1],
+      earth: [139, 117, 88, 1], lawn: [112, 158, 78, 1], paving: [214, 209, 199, 1], boundary: [255, 255, 255, 0.95],
+    };
+
+    const rgb = (c) => `rgb(${c[0]} ${c[1]} ${c[2]})`;
+    const TEX = {
+      speckle: "radial-gradient(circle at 30% 30%, rgba(255,255,255,.25) 0 1px, transparent 1.5px), radial-gradient(circle at 70% 60%, rgba(0,0,0,.15) 0 1px, transparent 1.5px)",
+      brick: "repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 7px)",
+      timber: "repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 1px, transparent 1px 5px)",
+      slate: "repeating-linear-gradient(0deg, rgba(255,255,255,.12) 0 1px, transparent 1px 6px)",
+      glass: "linear-gradient(135deg, rgba(255,255,255,.55) 0 30%, transparent 30% 55%, rgba(255,255,255,.3) 55% 62%, transparent 62%)",
+      lawn: "repeating-linear-gradient(80deg, rgba(255,255,255,.1) 0 1px, transparent 1px 4px)",
+    };
+
+    const STAGES = [
+      {
+        id: 1, name: "Site survey", sw: MAT.peg, tex: null, ink: "#fff",
+        text: "The plot is captured and cleared. Pegs and string lines set out the line of every external wall.",
+        how: "Draped polygon and polyline graphics, plus Mesh pegs in a local vertex space.",
+        cam: { heading: 18, tilt: 58, dist: 62 },
+      },
+      {
+        id: 2, name: "Foundations", sw: MAT.concrete, tex: TEX.speckle, ink: "#2b2f36",
+        text: "Strip footings go in a metre down, then blockwork and a concrete slab bring the floor up to level.",
+        how: "The ground turns translucent so below-grade meshes stay visible.",
+        cam: { heading: 36, tilt: 48, dist: 40 }, groundOpacity: 0.3,
+      },
+      {
+        id: 3, name: "Ground floor", sw: MAT.brick, tex: TEX.brick, ink: "#3a2f22",
+        text: "Pale brick walls rise to 2.85 m, leaving openings for the front door, windows and patio doors.",
+        how: "Each wall is generated as solid segments around its openings.",
+        cam: { heading: 24, tilt: 68, dist: 34 },
+      },
+      {
+        id: 4, name: "Upper floor", sw: MAT.timber, tex: TEX.timber, ink: "#fff",
+        text: "A first-floor deck goes on, then charcoal timber-clad walls frame the bedrooms above.",
+        how: "Elements drop and rise into place by rebuilding their mesh every frame.",
+        cam: { heading: -32, tilt: 66, dist: 38 },
+      },
+      {
+        id: 5, name: "Roof", sw: MAT.slate, tex: TEX.slate, ink: "#fff",
+        text: `Gable ends and ${Z.pitch}° slate pitches close the shell, finished with a ridge cap and a brick chimney.`,
+        how: "Sloped slabs are eight-vertex prisms, so their volume is measured straight from the geometry.",
+        cam: { heading: -150, tilt: 64, dist: 42 },
+      },
+      {
+        id: 6, name: "Windows and doors", sw: MAT.glass, tex: TEX.glass, ink: "#1d3a4a",
+        text: "Frames and glazing slide into every opening, with an oak front door under a steel canopy.",
+        how: "Glazing uses a semi-transparent mesh material with blended alpha.",
+        cam: { heading: 12, tilt: 76, dist: 27 },
+      },
+      {
+        id: 7, name: "Landscape", sw: MAT.lawn, tex: TEX.lawn, ink: "#fff",
+        text: "Lawn, paving, a front hedge and trees settle the house into its plot.",
+        how: "Lawn and paving are draped on the terrain; low-poly trees grow from their base.",
+        cam: { heading: 32, tilt: 63, dist: 58 },
+      },
+    ];
+
+    /* ==================================================================
+       3. Geometry helpers (local metres → triangle meshes)
+       ================================================================== */
+    // Eight-vertex prism: 0-3 bottom ring (counter-clockwise from above), 4-7 top ring.
+    const HEX_FACES = [0,3,2, 0,2,1, 4,5,6, 4,6,7, 0,1,5, 0,5,4, 2,3,7, 2,7,6, 3,0,4, 3,4,7, 1,2,6, 1,6,5];
+    const hexa = (verts) => ({ verts, faces: HEX_FACES });
+    function box(xa, ya, za, xb, yb, zb) {
+      const [x0, x1] = [Math.min(xa, xb), Math.max(xa, xb)];
+      const [y0, y1] = [Math.min(ya, yb), Math.max(ya, yb)];
+      const [z0, z1] = [Math.min(za, zb), Math.max(za, zb)];
+      return hexa([[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]]);
+    }
+    function icosphere(cx, cy, cz, r, squash = 1) {
+      const t = (1 + Math.sqrt(5)) / 2, n = Math.hypot(1, t);
+      const raw = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]];
+      // rotate so a vertex points up, which reads more like a tree crown
+      const verts = raw.map(([x, y, z]) => [cx + (x / n) * r, cy + (z / n) * r, cz + (y / n) * r * squash]);
+      const faces = [0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11, 1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
+                     3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9, 4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1];
+      return { verts, faces };
+    }
+    function shapeVolume({ verts, faces }) {
+      let v = 0;
+      for (let i = 0; i < faces.length; i += 3) {
+        const [a, b, c] = [verts[faces[i]], verts[faces[i + 1]], verts[faces[i + 2]]];
+        v += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]);
+      }
+      return Math.abs(v / 6);
+    }
+
+    // A mesh element: parts = [{ mat, shapes: [...] }]
+    function meshElement(stage, name, parts, anim = { type: "rise" }) {
+      const pos = []; const comps = []; let vol = 0;
+      for (const p of parts) {
+        const faces = [];
+        for (const s of p.shapes) {
+          const off = pos.length / 3;
+          s.verts.forEach((v) => pos.push(v[0], v[1], v[2]));
+          s.faces.forEach((i) => faces.push(i + off));
+          vol += shapeVolume(s);
+        }
+        comps.push({ color: MAT[p.mat], faces: Uint32Array.from(faces) });
+      }
+      let zMin = Infinity, zMax = -Infinity, sx = 0, sy = 0;
+      for (let i = 0; i < pos.length; i += 3) {
+        zMin = Math.min(zMin, pos[i + 2]); zMax = Math.max(zMax, pos[i + 2]);
+        sx += pos[i]; sy += pos[i + 1];
+      }
+      const n = pos.length / 3;
+      return { kind: "mesh", stage, name, pos: Float64Array.from(pos), comps, vol, zMin, zMax, cx: sx / n, cy: sy / n, anim };
+    }
+    const drapeElement = (stage, name, type, coords, mat) => ({ kind: "drape", stage, name, type, coords, mat, vol: 0 });
+    const rect = (xa, ya, xb, yb) => [[xa, ya], [xb, ya], [xb, yb], [xa, yb], [xa, ya]];
+
+    // Wall along one side of the footprint, cut around its openings.
+    function wallFrame(side) {
+      const { x0, x1, y0, y1, t } = D;
+      if (side === "S") return { axis: "x", a0: x0, a1: x1, p0: y0, p1: y0 + t, out: [0, -1] };
+      if (side === "N") return { axis: "x", a0: x0, a1: x1, p0: y1 - t, p1: y1, out: [0, 1] };
+      if (side === "W") return { axis: "y", a0: y0 + t, a1: y1 - t, p0: x0, p1: x0 + t, out: [-1, 0] };
+      return { axis: "y", a0: y0 + t, a1: y1 - t, p0: x1 - t, p1: x1, out: [1, 0] };
+    }
+    const along = (f) => (s0, s1, za, zb, q0 = f.p0, q1 = f.p1) =>
+      f.axis === "x" ? box(s0, q0, za, s1, q1, zb) : box(q0, s0, za, q1, s1, zb);
+
+    function wallShapes(side, z0, z1, openings = []) {
+      const f = wallFrame(side), mk = along(f), shapes = [];
+      const ops = openings.map((o) => ({ s: o.c - o.w / 2, e: o.c + o.w / 2, sill: z0 + o.sill, head: z0 + o.head })).sort((a, b) => a.s - b.s);
+      let cur = f.a0;
+      for (const o of ops) {
+        if (o.s > cur) shapes.push(mk(cur, o.s, z0, z1));
+        if (o.sill > z0) shapes.push(mk(o.s, o.e, z0, o.sill));
+        if (o.head < z1) shapes.push(mk(o.s, o.e, o.head, z1));
+        cur = o.e;
+      }
+      if (cur < f.a1) shapes.push(mk(cur, f.a1, z0, z1));
+      return shapes;
+    }
+
+    function openingParts(side, z0, openings) {
+      const f = wallFrame(side), mk = along(f), pm = (f.p0 + f.p1) / 2;
+      const frames = [], glass = [], doors = [];
+      const fw = 0.07, fd = 0.06;
+      for (const o of openings) {
+        const s = o.c - o.w / 2, e = o.c + o.w / 2, zs = z0 + o.sill, zh = z0 + o.head;
+        frames.push(mk(s, s + fw, zs, zh, pm - fd, pm + fd), mk(e - fw, e, zs, zh, pm - fd, pm + fd),
+                    mk(s, e, zh - fw, zh, pm - fd, pm + fd), mk(s, e, zs, zs + fw, pm - fd, pm + fd));
+        if (o.kind === "door") doors.push(mk(s + fw, e - fw, zs + fw, zh - fw, pm - 0.03, pm + 0.03));
+        else glass.push(mk(s + fw, e - fw, zs + fw, zh - fw, pm - 0.012, pm + 0.012));
+        if (o.w > 1.4) frames.push(mk(o.c - fw / 2, o.c + fw / 2, zs, zh, pm - fd, pm + fd));
+        o.glazed = o.kind === "door" ? 0 : (o.w - 2 * fw) * (o.head - o.sill - 2 * fw);
+      }
+      return [{ mat: "frame", shapes: frames }, { mat: "glass", shapes: glass }, ...(doors.length ? [{ mat: "door", shapes: doors }] : [])];
+    }
+
+    /* ==================================================================
+       4. The house, element by element
+       ================================================================== */
+    const OPENINGS = {
+      gf: {
+        S: [{ c: 0, w: 1.0, sill: 0, head: 2.1, kind: "door" }, { c: -3.4, w: 1.8, sill: 0.85, head: 2.1 }, { c: 3.4, w: 1.8, sill: 0.85, head: 2.1 }],
+        N: [{ c: -2.2, w: 2.6, sill: 0, head: 2.1 }, { c: 2.8, w: 1.2, sill: 0.95, head: 2.1 }],
+        W: [{ c: 0, w: 1.2, sill: 0.9, head: 2.1 }],
+        E: [{ c: 0.8, w: 0.9, sill: 0.9, head: 2.1 }],
+      },
+      ff: {
+        S: [{ c: -3.4, w: 1.5, sill: 0.8, head: 2.0 }, { c: 0, w: 0.9, sill: 0.8, head: 2.0 }, { c: 3.4, w: 1.5, sill: 0.8, head: 2.0 }],
+        N: [{ c: -2.6, w: 1.4, sill: 0.8, head: 2.0 }, { c: 2.6, w: 1.4, sill: 0.8, head: 2.0 }],
+        W: [{ c: 0, w: 0.9, sill: 0.8, head: 2.0 }],
+        E: [{ c: 0, w: 0.9, sill: 0.8, head: 2.0 }],
+      },
+    };
+    const SIDE_NAME = { S: "south", N: "north", W: "west", E: "east" };
+    const HEDGE = [[-13, -1.1], [1.1, 6.2]]; // x ranges along the front boundary
+    const PAVING = [["Driveway", 6.6, -11.8, 10.6, -1.5], ["Front path", -0.7, -11.8, 0.7, -4], ["Rear terrace", -5.5, 4, 1.5, 7.5]].map(([n, ...r]) => Object.assign(r, { name: n }));
+    const TREES = [[-10.5, -7.5, 2.0], [10.8, 8.5, 2.3], [-9.5, 9.5, 1.8], [-12, 1.5, 1.6], [4.5, 10.5, 1.9]];
+
+    function buildModel() {
+      const { x0, x1, y0, y1, t } = D;
+      const E = [];
+
+      // Stage 1: survey and setting out
+      E.push(drapeElement(1, "Cleared site", "polygon", rect(-14, -11, 14, 13), "earth"));
+      E.push(drapeElement(1, "Plot boundary", "polyline", rect(-15, -12, 15, 14), "boundary"));
+      const g = 1.4, pegs = [], strings = [], zs = 0.35;
+      for (const y of [y0, y1]) { pegs.push(box(x0 - g - .04, y - .04, -0.1, x0 - g + .04, y + .04, 0.55), box(x1 + g - .04, y - .04, -0.1, x1 + g + .04, y + .04, 0.55)); strings.push(box(x0 - g, y - .008, zs, x1 + g, y + .008, zs + .016)); }
+      for (const x of [x0, x1]) { pegs.push(box(x - .04, y0 - g - .04, -0.1, x + .04, y0 - g + .04, 0.55), box(x - .04, y1 + g - .04, -0.1, x + .04, y1 + g + .04, 0.55)); strings.push(box(x - .008, y0 - g, zs, x + .008, y1 + g, zs + .016)); }
+      E.push({ ...meshElement(1, "Setting-out pegs", [{ mat: "peg", shapes: pegs }]), until: 3 });
+      E.push({ ...meshElement(1, "String lines", [{ mat: "string", shapes: strings }], { type: "none" }), until: 3 });
+
+      // Stage 2: foundations
+      const fw = 0.4, cxW = x0 + t / 2, cxE = x1 - t / 2, cyS = y0 + t / 2, cyN = y1 - t / 2;
+      E.push(meshElement(2, "Strip footings", [{ mat: "concrete", shapes: [
+        box(x0 - fw + t / 2 - t / 2, cyS - fw, -1.0, x1 + fw - t / 2 + t / 2, cyS + fw, -0.45),
+        box(x0 - fw + t / 2 - t / 2, cyN - fw, -1.0, x1 + fw - t / 2 + t / 2, cyN + fw, -0.45),
+        box(cxW - fw, cyS + fw, -1.0, cxW + fw, cyN - fw, -0.45),
+        box(cxE - fw, cyS + fw, -1.0, cxE + fw, cyN - fw, -0.45),
+      ] }]));
+      E.push(meshElement(2, "Substructure blockwork", [{ mat: "block", shapes: ["S", "N", "W", "E"].flatMap((s) => wallShapes(s, -0.45, 0)) }]));
+      E.push(meshElement(2, "Ground-bearing slab", [{ mat: "slab", shapes: [box(x0, y0, 0, x1, y1, Z.slab)] }]));
+
+      // Stage 3: ground-floor walls
+      for (const s of ["S", "E", "N", "W"]) {
+        E.push(meshElement(3, `Ground floor, ${SIDE_NAME[s]} wall`, [{ mat: "brick", shapes: wallShapes(s, Z.slab, Z.gfTop, OPENINGS.gf[s]) }]));
+      }
+
+      // Stage 4: first-floor deck and walls
+      E.push(meshElement(4, "First-floor deck", [{ mat: "deck", shapes: [box(x0, y0, Z.gfTop, x1, y1, Z.ffTop)] }], { type: "drop", by: 3 }));
+      for (const s of ["S", "E", "N", "W"]) {
+        E.push(meshElement(4, `Upper floor, ${SIDE_NAME[s]} wall`, [{ mat: "timber", shapes: wallShapes(s, Z.ffTop, Z.eave, OPENINGS.ff[s]) }]));
+      }
+
+      // Stage 5: roof
+      const o = Z.overhang, rt = 0.22, zLow = Z.eave - o * TAN;
+      const gable = (xa, xb) => hexa([[xa, y0, Z.eave], [xb, y0, Z.eave], [xb, y1, Z.eave], [xa, y1, Z.eave], [xa, 0, RIDGE], [xb, 0, RIDGE], [xb, 0, RIDGE], [xa, 0, RIDGE]]);
+      E.push(meshElement(5, "West gable", [{ mat: "timber", shapes: [gable(x0, x0 + t)] }]));
+      E.push(meshElement(5, "East gable", [{ mat: "timber", shapes: [gable(x1 - t, x1)] }]));
+      const pitch = (ya, za, yb, zb) => hexa([[x0 - o, ya, za], [x1 + o, ya, za], [x1 + o, yb, zb], [x0 - o, yb, zb], [x0 - o, ya, za + rt], [x1 + o, ya, za + rt], [x1 + o, yb, zb + rt], [x0 - o, yb, zb + rt]]);
+      E.push(meshElement(5, "South roof pitch", [{ mat: "slate", shapes: [pitch(y0 - o, zLow, 0, RIDGE)] }], { type: "drop", by: 4 }));
+      E.push(meshElement(5, "North roof pitch", [{ mat: "slate", shapes: [pitch(0, RIDGE, y1 + o, zLow)] }], { type: "drop", by: 4 }));
+      E.push(meshElement(5, "Ridge cap", [{ mat: "ridge", shapes: [box(x0 - o, -0.16, RIDGE + 0.06, x1 + o, 0.16, RIDGE + 0.32)] }], { type: "drop", by: 4 }));
+      const chY = 1.6, chRoof = RIDGE - chY * TAN;
+      E.push(meshElement(5, "Chimney", [{ mat: "chimney", shapes: [box(3.0, chY - 0.4, chRoof - 0.4, 3.8, chY + 0.4, RIDGE + 1.0)] }]));
+
+      // Stage 6: windows and doors
+      for (const [lvl, z0, label] of [["gf", Z.slab, "Ground floor"], ["ff", Z.ffTop, "Upper floor"]]) {
+        for (const s of ["S", "E", "N", "W"]) {
+          const out = wallFrame(s).out;
+          const parts = openingParts(s, z0, OPENINGS[lvl][s]);
+          if (lvl === "gf" && s === "S") parts.push({ mat: "frame", shapes: [box(-1.1, y0 - 1.1, 2.4, 1.1, y0, 2.5)] });
+          E.push(meshElement(6, `${label}, ${SIDE_NAME[s]} openings`, parts, { type: "slide", dx: out[0] * 3, dy: out[1] * 3 }));
+        }
+      }
+
+      // Stage 7: landscape
+      E.push(drapeElement(7, "Lawn", "polygon", rect(-13, -10, 13, 12), "lawn"));
+      PAVING.forEach((r) => E.push(drapeElement(7, r.name, "polygon", rect(...r), "paving")));
+      E.push(meshElement(7, "Front hedge", [{ mat: "hedge", shapes: HEDGE.map(([xa, xb]) => box(xa, -11, 0, xb, -10.3, 0.9)) }]));
+      TREES.forEach(([x, y, r], i) => {
+        const h = 1.6 + r * 0.6;
+        E.push(meshElement(7, `Tree ${i + 1}`, [
+          { mat: "trunk", shapes: [box(x - 0.13, y - 0.13, 0, x + 0.13, y + 0.13, h + 0.5)] },
+          { mat: i % 2 ? "leaf2" : "leaf", shapes: [icosphere(x, y, h + r * 0.95, r, 1.15)] },
+        ], { type: "grow" }));
+      });
+
+      E.forEach((e, i) => (e.id = i));
+      return E;
+    }
+
+    const MODEL = buildModel();
+    const allOpenings = [...Object.values(OPENINGS.gf), ...Object.values(OPENINGS.ff)].flat();
+    const fmt = (n, d = 1) => n.toLocaleString("en-GB", { minimumFractionDigits: d, maximumFractionDigits: d });
+
+    // Quantities shown for each stage, measured from the model itself
+    const STAGE_FACTS = STAGES.map((st) => {
+      const els = MODEL.filter((e) => e.stage === st.id);
+      const vol = els.reduce((a, e) => a + e.vol, 0);
+      const facts = [["Elements", String(els.length)]];
+      if (vol > 0.5 && st.id !== 7) facts.push(["Volume", `${fmt(vol)} m³`]);
+      const W = D.x1 - D.x0, L = D.y1 - D.y0;
+      const extra = {
+        1: [["Footprint", `${fmt(W)} × ${fmt(L)} m`], ["Plot", "30 × 26 m"]],
+        2: [["Footing depth", "1.0 m"]],
+        3: [["Wall height", `${fmt(Z.gfTop - Z.slab, 2)} m`], ["Openings", String(Object.values(OPENINGS.gf).flat().length)]],
+        4: [["Floor area", `${fmt(2 * (W - 2 * D.t) * (L - 2 * D.t), 0)} m²`]],
+        5: [["Pitch", `${Z.pitch}°`], ["Ridge", `${fmt(RIDGE, 2)} m`]],
+        6: [["Openings", String(allOpenings.length)], ["Glazed area", `${fmt(allOpenings.reduce((a, o) => a + (o.glazed || 0), 0))} m²`]],
+        7: [["Trees", String(TREES.length)], ["Hedge", `${fmt(HEDGE.reduce((a, [xa, xb]) => a + xb - xa, 0))} m`], ["Paving", `${fmt(PAVING.reduce((a, r) => a + Math.abs((r[2] - r[0]) * (r[3] - r[1])), 0), 0)} m²`]],
+      }[st.id];
+      return [...facts, ...extra].slice(0, 4);
+    });
+
+    /* ==================================================================
+       5. Scene controller: everything that talks to the ArcGIS SDK
+       ================================================================== */
+    const SYM = {
+      built: { type: "mesh-3d", symbolLayers: [{ type: "fill", edges: { type: "solid", color: [20, 26, 44, 0.32], size: 0.6 } }] },
+      picked: { type: "mesh-3d", symbolLayers: [{ type: "fill", edges: { type: "solid", color: [61, 90, 254, 1], size: 2.4 } }] },
+      ghost: { type: "mesh-3d", symbolLayers: [{ type: "fill", castShadows: false, material: { color: [61, 90, 254, 0.035], colorMixMode: "replace" }, edges: { type: "solid", color: [76, 104, 255, 0.95], size: 1.1 } }] },
+      ghostFill: { type: "simple-fill", color: [61, 90, 254, 0.06], outline: { color: [76, 104, 255, 0.95], width: 1.2, style: "dash" } },
+      ghostLine: { type: "simple-line", color: [76, 104, 255, 0.95], width: 1.2, style: "dash" },
+    };
+    const builtDrape = (e) => e.type === "polygon"
+      ? { type: "simple-fill", color: MAT[e.mat], outline: { color: [0, 0, 0, 0], width: 0 } }
+      : { type: "simple-line", color: MAT[e.mat], width: 2, style: "dash" };
+
+    const easeOut = (p) => 1 - Math.pow(1 - p, 3);
+
+    async function loadArcGIS() {
+      const t0 = performance.now();
+      while (!window.$arcgis) {
+        if (performance.now() - t0 > 20000) throw new Error("The ArcGIS SDK did not load.");
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const [GraphicsLayer, Graphic, Mesh, MeshLocalVertexSpace, Point, Polygon, Polyline, Camera] = await window.$arcgis.import([
+        "@arcgis/core/layers/GraphicsLayer.js",
+        "@arcgis/core/Graphic.js",
+        "@arcgis/core/geometry/Mesh.js",
+        "@arcgis/core/geometry/support/MeshLocalVertexSpace.js",
+        "@arcgis/core/geometry/Point.js",
+        "@arcgis/core/geometry/Polygon.js",
+        "@arcgis/core/geometry/Polyline.js",
+        "@arcgis/core/Camera.js",
+      ]);
+      await customElements.whenDefined("arcgis-scene");
+      return { GraphicsLayer, Graphic, Mesh, MeshLocalVertexSpace, Point, Polygon, Polyline, Camera };
+    }
+
+    class HouseScene {
+      constructor(el, sdk, { onPick, onUserNavigate }) {
+        Object.assign(this, { el, sdk, onPick, onUserNavigate });
+        this.items = [];
+        this.stage = 0;
+        this.ghost = true;
+        this.picked = null;
+        this.raf = null;
+        this.orbitRaf = null;
+        this.listeners = [];
+      }
+
+      async init() {
+        const { GraphicsLayer, Graphic, Point } = this.sdk;
+        await this.el.viewOnReady();
+        const map = this.el.map;
+
+        this.base = 0;
+        try {
+          const res = await Promise.race([
+            map.ground.queryElevation(new Point({ ...SITE, spatialReference: { wkid: 4326 } })),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+          ]);
+          this.base = (res.geometry.z ?? 0) + 0.05;
+        } catch (e) { console.warn("Elevation query failed, building at 0 m", e); }
+
+        this.drapeLayer = new GraphicsLayer({ title: "Site surfaces", elevationInfo: { mode: "on-the-ground" } });
+        this.meshLayer = new GraphicsLayer({ title: "House model", elevationInfo: { mode: "absolute-height" } });
+        map.addMany([this.drapeLayer, this.meshLayer]);
+
+        for (const def of MODEL) {
+          const graphic = new Graphic({ geometry: def.kind === "mesh" ? this.mesh(def, 1) : this.drape(def), attributes: { id: def.id, name: def.name, stage: def.stage } });
+          const item = { def, graphic, full: graphic.geometry, tween: null };
+          this.items.push(item);
+          (def.kind === "mesh" ? this.meshLayer : this.drapeLayer).add(graphic);
+        }
+
+        this.el.environment.lighting = { type: "sun", directShadowsEnabled: true, cameraTrackingEnabled: false, date: new Date() };
+        this.el.environment.weather = { type: "sunny", cloudCover: 0.25 };
+
+        const on = (type, fn) => { this.el.addEventListener(type, fn); this.listeners.push([type, fn]); };
+        on("arcgisViewClick", (e) => this.handleClick(e));
+        const userMoved = () => this.orbitRaf && this.onUserNavigate?.();
+        on("arcgisViewDrag", userMoved);
+        on("arcgisViewMouseWheel", userMoved);
+
+        this.el.camera = this.camera(0, 0, 2600);
+      }
+
+      destroy() {
+        cancelAnimationFrame(this.raf); cancelAnimationFrame(this.orbitRaf);
+        this.listeners.forEach(([t, f]) => this.el.removeEventListener(t, f));
+      }
+
+      /* ----- geometry ----- */
+      mesh(def, p, anim = def.anim) {
+        const src = def.pos, pos = new Float64Array(src.length);
+        const q = Math.max(p, 0.02);
+        for (let i = 0; i < src.length; i += 3) {
+          let x = src[i], y = src[i + 1], z = src[i + 2];
+          if (p < 1) {
+            if (anim.type === "rise") z = def.zMin + (z - def.zMin) * q;
+            else if (anim.type === "drop") z += (1 - p) * anim.by;
+            else if (anim.type === "slide") { x += (1 - p) * anim.dx; y += (1 - p) * anim.dy; }
+            else if (anim.type === "grow") { x = def.cx + (x - def.cx) * q; y = def.cy + (y - def.cy) * q; z = def.zMin + (z - def.zMin) * q; }
+          }
+          pos[i] = x; pos[i + 1] = y; pos[i + 2] = z;
+        }
+        const { Mesh, MeshLocalVertexSpace } = this.sdk;
+        return new Mesh({
+          vertexAttributes: { position: pos },
+          components: def.comps.map((c) => ({
+            faces: c.faces,
+            shading: "flat",
+            material: { color: c.color, alphaMode: c.color[3] < 1 ? "blend" : "opaque", doubleSided: true },
+          })),
+          vertexSpace: new MeshLocalVertexSpace({ origin: [SITE.longitude, SITE.latitude, this.base] }),
+          spatialReference: { wkid: 4326 },
+        });
+      }
+
+      drape(def) {
+        const { Polygon, Polyline } = this.sdk;
+        const ring = def.coords.map(([x, y]) => toLonLat(x, y));
+        return def.type === "polygon"
+          ? new Polygon({ rings: [ring], spatialReference: { wkid: 4326 } })
+          : new Polyline({ paths: [ring], spatialReference: { wkid: 4326 } });
+      }
+
+      camera(heading, tilt, dist) {
+        const { Camera, Point } = this.sdk;
+        const h = (heading * Math.PI) / 180, t = (tilt * Math.PI) / 180;
+        const horiz = dist * Math.sin(t), up = dist * Math.cos(t);
+        const [longitude, latitude] = toLonLat(-Math.sin(h) * horiz, -Math.cos(h) * horiz);
+        return new Camera({
+          position: new Point({ longitude, latitude, z: this.base + TARGET_Z + up, spatialReference: { wkid: 4326 } }),
+          heading, tilt, fov: 52,
+        });
+      }
+
+      /* ----- state ----- */
+      setStage(n, { animate = true } = {}) {
+        const prev = this.stage;
+        this.stage = n;
+        const now = performance.now();
+        const growing = animate && n > prev && !prefersReducedMotion();
+        const entering = this.items.filter((it) => it.def.stage === n && it.def.kind === "mesh");
+        for (const it of this.items) {
+          it.tween = null;
+          if (it.def.kind === "mesh") it.graphic.geometry = it.full;
+        }
+        if (growing) {
+          const spread = Math.min(160, 900 / Math.max(entering.length, 1));
+          entering.forEach((it, k) => {
+            if (it.def.anim.type === "none") return;
+            it.tween = { start: now + 120 + k * spread, dur: 850, started: false };
+          });
+          this.loop();
+        }
+        const s = STAGES[n - 1];
+        this.el.map.ground.opacity = s?.groundOpacity ?? 1;
+        this.drapeLayer.opacity = s?.groundOpacity ?? 1;
+        this.applySymbols();
+      }
+
+      setGhost(on) { this.ghost = on; this.applySymbols(); }
+
+      setHour(hour) {
+        const hh = Math.floor(hour), mm = Math.round((hour - hh) * 60);
+        // 21 June, Irish Summer Time (UTC+1)
+        const date = new Date(Date.UTC(2026, 5, 21, hh - 1, mm));
+        const light = this.el.environment.lighting;
+        if (light?.type === "sun") light.date = date;
+      }
+
+      applySymbols() {
+        for (const it of this.items) {
+          const { def, graphic } = it;
+          const waiting = it.tween && !it.tween.started;
+          const built = def.stage <= this.stage && !waiting;
+          const removed = def.until && this.stage > def.until;
+          graphic.visible = !removed && (built || this.ghost);
+          if (def.kind === "mesh") graphic.symbol = built ? (this.picked === def.id ? SYM.picked : SYM.built) : SYM.ghost;
+          else graphic.symbol = built ? builtDrape(def) : def.type === "polygon" ? SYM.ghostFill : SYM.ghostLine;
+        }
+      }
+
+      loop() {
+        if (this.raf) return;
+        const tick = () => {
+          const now = performance.now();
+          let active = false, symbolsDirty = false;
+          for (const it of this.items) {
+            const tw = it.tween;
+            if (!tw) continue;
+            const p = (now - tw.start) / tw.dur;
+            if (p < 0) { active = true; continue; }
+            if (!tw.started) { tw.started = true; symbolsDirty = true; }
+            if (p >= 1) { it.graphic.geometry = it.full; it.tween = null; continue; }
+            it.graphic.geometry = this.mesh(it.def, easeOut(p));
+            active = true;
+          }
+          if (symbolsDirty) this.applySymbols();
+          this.raf = active ? requestAnimationFrame(tick) : null;
+        };
+        this.raf = requestAnimationFrame(tick);
+      }
+
+      /* ----- camera ----- */
+      flyTo(n, { intro = false } = {}) {
+        if (this.orbitRaf) return;
+        const { heading, tilt, dist } = STAGES[n - 1].cam;
+        const reduce = prefersReducedMotion();
+        this.el.goTo(this.camera(heading, tilt, dist), {
+          duration: reduce ? 0 : intro ? 4200 : 1900,
+          easing: intro ? "in-out-expo" : "in-out-cubic",
+        }).catch(() => {});
+      }
+
+      setOrbit(on) {
+        cancelAnimationFrame(this.orbitRaf);
+        this.orbitRaf = null;
+        if (!on) return;
+        const cam = this.el.camera;
+        const dx = (cam.position.longitude - SITE.longitude) * M_LON;
+        const dy = (cam.position.latitude - SITE.latitude) * M_LAT;
+        const dz = cam.position.z - (this.base + TARGET_Z);
+        const dist = Math.min(Math.max(Math.hypot(dx, dy, dz), 18), 140);
+        const tilt = Math.min(Math.max(cam.tilt, 35), 82);
+        let heading = cam.heading, last = performance.now();
+        const step = (now) => {
+          heading = (heading + (now - last) * 0.006) % 360; // ~6° a second
+          last = now;
+          this.el.camera = this.camera(heading, tilt, dist);
+          this.orbitRaf = requestAnimationFrame(step);
+        };
+        this.orbitRaf = requestAnimationFrame(step);
+      }
+
+      /* ----- picking ----- */
+      async handleClick(e) {
+        try {
+          const res = await this.el.hitTest(e.detail, { include: [this.meshLayer, this.drapeLayer] });
+          const hit = res.results.find((r) => r.graphic?.attributes?.name);
+          const def = hit ? MODEL[hit.graphic.attributes.id] : null;
+          this.picked = def?.kind === "mesh" ? def.id : null;
+          this.applySymbols();
+          this.onPick?.(def ? { name: def.name, stage: def.stage, vol: def.vol, built: def.stage <= this.stage } : null);
+        } catch (err) { console.warn(err); }
+      }
+      clearPick() { this.picked = null; this.applySymbols(); }
+    }
+
+    /* ==================================================================
+       6. React UI
+       ================================================================== */
+    const Icon = {
+      play: html`<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor"/></svg>`,
+      pause: html`<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg>`,
+      prev: html`<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
+      next: html`<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
+      check: html`<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
+      dot: html`<svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="3" fill="currentColor"/></svg>`,
+      code: html`<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
+      blueprint: html`<svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z M4 7.5l8 4.5 8-4.5 M12 12v9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" strokeDasharray="3 2"/></svg>`,
+      orbit: html`<svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4.2" fill="none" stroke="currentColor" strokeWidth="1.7"/><path d="M12 5v9" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><path d="M19.5 9.6l1.6-.6-.2 1.8" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>`,
+      sun: html`<svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="1.7"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>`,
+      close: html`<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>`,
+    };
+
+    const swatchStyle = (s) => ({ "--sw": rgb(s.sw), "--sw-tex": s.tex || "none", "--sw-ink": s.ink });
+
+    function StageList({ stage, onSelect }) {
+      return html`
+        <ol className="stages">
+          ${STAGES.map((s, i) => {
+            const state = s.id < stage ? "built" : s.id === stage ? "current" : "upcoming";
+            return html`
+              <li key=${s.id} className=${`stage ${state}`} style=${swatchStyle(s)}>
+                <button onClick=${() => onSelect(s.id)} aria-current=${state === "current" ? "step" : undefined}>
+                  <span className="swatch">${s.id}</span>
+                  <span className="name">${s.name}</span>
+                  <span className="state">${state === "built" ? Icon.check : state === "current" ? null : Icon.dot}</span>
+                </button>
+                ${state === "current" && html`
+                  <div className="detail">
+                    <p>${s.text}</p>
+                    <dl className="facts">
+                      ${STAGE_FACTS[i].map(([k, v]) => html`<div key=${k}><dt>${k}</dt><dd>${v}</dd></div>`)}
+                    </dl>
+                    <p className="how">${Icon.code}<span>${s.how}</span></p>
+                  </div>`}
+              </li>`;
+          })}
+        </ol>`;
+    }
+
+    function Dock({ stage, setStage, playing, setPlaying, ghost, setGhost, orbit, setOrbit, hour, setHour }) {
+      const s = STAGES[stage - 1];
+      const hh = String(Math.floor(hour)).padStart(2, "0"), mm = String(Math.round((hour % 1) * 60)).padStart(2, "0");
+      return html`
+        <div className="dock glass" role="group" aria-label="Build playback">
+          <div className="transport">
+            <button className="icon-btn" onClick=${() => setStage(Math.max(1, stage - 1))} disabled=${stage === 1} aria-label="Previous stage">${Icon.prev}</button>
+            <button className="play" onClick=${() => setPlaying(!playing)} aria-label=${playing ? "Pause build" : "Play build"}>${playing ? Icon.pause : Icon.play}</button>
+            <button className="icon-btn" onClick=${() => setStage(Math.min(STAGES.length, stage + 1))} disabled=${stage === STAGES.length} aria-label="Next stage">${Icon.next}</button>
+          </div>
+
+          <div className="timeline">
+            <div className="timeline-head">
+              <strong>${s.name}</strong>
+              <span>Stage ${stage} of ${STAGES.length}</span>
+            </div>
+            <div className="track">
+              ${STAGES.map((st) => {
+                const cls = st.id < stage ? "built" : st.id === stage ? "current" : "";
+                return html`<button key=${st.id + (st.id === stage ? `-${playing}` : "")}
+                  className=${`seg ${cls} ${playing && st.id === stage ? "playing" : ""}`}
+                  style=${{ "--sw": rgb(st.sw), "--dwell": `${DWELL}ms` }}
+                  onClick=${() => setStage(st.id)} aria-label=${`Go to stage ${st.id}, ${st.name}`}><i></i></button>`;
+              })}
+            </div>
+          </div>
+
+          <div className="controls">
+            <button className="toggle" aria-pressed=${ghost} onClick=${() => setGhost(!ghost)} title="Show stages still to come as a blueprint">${Icon.blueprint}Blueprint</button>
+            <button className="toggle" aria-pressed=${orbit} onClick=${() => setOrbit(!orbit)} title="Slowly circle the house">${Icon.orbit}Orbit</button>
+            <label className="sun" title="Time of day on 21 June">
+              ${Icon.sun}
+              <input type="range" min="5" max="21.5" step="0.25" value=${hour} onInput=${(e) => setHour(parseFloat(e.target.value))} aria-label="Time of day" />
+              <span>${hh}:${mm}</span>
+            </label>
+          </div>
+        </div>`;
+    }
+
+    function App() {
+      const sceneRef = useRef(null);
+      const ctrl = useRef(null);
+      const [status, setStatus] = useState("loading");
+      const [stage, setStageRaw] = useState(1);
+      const [playing, setPlaying] = useState(false);
+      const [ghost, setGhost] = useState(true);
+      const [orbit, setOrbit] = useState(false);
+      const [hour, setHour] = useState(16);
+      const [picked, setPicked] = useState(null);
+      const prevStage = useRef(1);
+
+      // Boot the scene once
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const sdk = await loadArcGIS();
+            const c = new HouseScene(sceneRef.current, sdk, { onPick: setPicked, onUserNavigate: () => setOrbit(false) });
+            await c.init();
+            if (cancelled) return c.destroy();
+            ctrl.current = c;
+            c.setHour(16);
+            c.setStage(1, { animate: false });
+            setStatus("ready");
+            c.flyTo(1, { intro: true });
+          } catch (err) {
+            console.error(err);
+            if (!cancelled) setStatus("error");
+          }
+        })();
+        return () => { cancelled = true; ctrl.current?.destroy(); };
+      }, []);
+
+      const setStage = useCallback((n) => setStageRaw(n), []);
+      const choose = useCallback((n) => { setPlaying(false); setStageRaw(n); }, []);
+
+      // Push stage changes into the scene
+      useEffect(() => {
+        const c = ctrl.current;
+        if (!c || status !== "ready") return;
+        if (prevStage.current !== stage || c.stage !== stage) {
+          c.setStage(stage, { animate: stage > prevStage.current });
+          c.flyTo(stage);
+          prevStage.current = stage;
+        }
+      }, [stage, status]);
+
+      useEffect(() => { ctrl.current?.setGhost(ghost); }, [ghost, status]);
+      useEffect(() => { ctrl.current?.setHour(hour); }, [hour, status]);
+      useEffect(() => {
+        const c = ctrl.current;
+        if (!c) return;
+        c.setOrbit(orbit);
+        if (!orbit && status === "ready") c.flyTo(stage);
+      }, [orbit, status]);
+
+      // Playback: hold each stage, then move on
+      useEffect(() => {
+        if (!playing) return;
+        const id = setTimeout(() => {
+          if (stage < STAGES.length) setStageRaw(stage + 1);
+          else setPlaying(false);
+        }, DWELL);
+        return () => clearTimeout(id);
+      }, [playing, stage]);
+
+      const togglePlay = useCallback((on) => {
+        if (on && stage === STAGES.length) { prevStage.current = 0; setStageRaw(1); }
+        setPlaying(on);
+      }, [stage]);
+
+      // Keyboard: ← → move between stages, space plays or pauses
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.target.closest?.("input, button, arcgis-scene")) return;
+          if (e.key === "ArrowRight") choose(Math.min(STAGES.length, stage + 1));
+          else if (e.key === "ArrowLeft") choose(Math.max(1, stage - 1));
+          else if (e.key === " ") { e.preventDefault(); togglePlay(!playing); }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [stage, playing, choose, togglePlay]);
+
+      const pickedStage = picked && STAGES[picked.stage - 1];
+
+      return html`
+        <div className="app">
+          <arcgis-scene ref=${sceneRef} basemap="satellite" ground="world-elevation" quality-profile="high"
+            center=${`${SITE.longitude},${SITE.latitude}`} zoom="15"></arcgis-scene>
+
+          <aside className="panel glass" aria-label="Build stages">
+            <header>
+              <h1>Modelling a house</h1>
+              <p>Seven stages, from the first survey peg to a finished garden.</p>
+            </header>
+            <${StageList} stage=${stage} onSelect=${choose} />
+          </aside>
+
+          <${Dock} stage=${stage} setStage=${choose} playing=${playing} setPlaying=${togglePlay}
+            ghost=${ghost} setGhost=${setGhost} orbit=${orbit} setOrbit=${setOrbit} hour=${hour} setHour=${setHour} />
+
+          ${picked
+            ? html`<div className="pick glass" role="status">
+                <h2>${picked.name}</h2>
+                <p>${picked.built ? "Added" : "Planned"} in stage ${picked.stage}, ${pickedStage.name.toLowerCase()}</p>
+                ${picked.vol > 0.01 && html`<p>${fmt(picked.vol, 2)} m³ of material</p>`}
+                <button className="icon-btn" onClick=${() => { setPicked(null); ctrl.current?.clearPick(); }} aria-label="Clear selection">${Icon.close}</button>
+              </div>`
+            : status === "ready" && html`<div className="hint glass">Click any part of the house to measure it</div>`}
+
+          <div className=${`veil ${status === "ready" ? "gone" : ""}`} aria-hidden=${status === "ready"}>
+            <div className="veil-inner">
+              ${status === "error"
+                ? html`<div key="error"><h1>Scene unavailable</h1><p>The 3D scene couldn't load. Check your connection to js.arcgis.com, then reload the page.</p></div>`
+                : html`<div key="loading"><h1>Modelling a house</h1><p>Preparing the plot</p><div className="bar"></div></div>`}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    createRoot(document.getElementById("root")).render(html`<${App} />`);
+  </script>
+</body>
+</html>
